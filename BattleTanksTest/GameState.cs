@@ -59,21 +59,44 @@ namespace BattleTanksTest
             this.bullets = new List<Bullet>();
             this.units = new List<Unit>();
         }
+
+        public Player(Player source)
+            : this(source.name)
+        {
+            this.bullets.AddRange(source.bullets);
+            this.units.AddRange(source.units);
+        }
     }
 
     public class GameState
     {
         public int currentTick;
-        public State[,] blocks;
         public Player[] players;
 
-        public GameState(string layout)
+        protected GameState()
         {
             this.currentTick = 0;
             this.players = new Player[2];
-            this.players[0]= new Player("Player 1");
-            this.players[1]= new Player("Player 2");
+            this.players[0] = new Player("Player 1");
+            this.players[1] = new Player("Player 2");
+        }
 
+        public GameState(GameState source)
+        {
+            this.currentTick = source.currentTick;
+            this.players = new Player[2];
+            this.players[0] = new Player(source.players[0]);
+            this.players[1] = new Player(source.players[1]);
+        }
+    }
+
+    private class ServerGameState : GameState
+    {
+        public State[,] blocks;
+
+        public ServerGameState(string layout)
+            : base()
+        {
             string[] rows = layout.Split('\n');
             int width = rows[0].Trim().Length;
             int height = rows.Length;
@@ -82,7 +105,6 @@ namespace BattleTanksTest
             fillBoard(rows);
             setupTanks();
         }
-
         private void setupTanks()
         {
             for (int p = 0; p < players.Length; p++)

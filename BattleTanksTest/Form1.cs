@@ -13,7 +13,7 @@ namespace BattleTanksTest
     public partial class Form1 : Form
     {
         public Font gridFont;
-        public GameState gameState;
+        public ServerGameState gameState;
         public Rectangle gridRect;
 
         public Form1()
@@ -22,7 +22,7 @@ namespace BattleTanksTest
             gridFont = new Font("Arial", 10);
 
             string layout = File.ReadAllText("layout1.txt");
-            gameState = new GameState(layout);
+            gameState = new ServerGameState(layout);
 #if DEBUG
             this.MinimumSize = new Size((gameState.BoardWidth * 16) + 10, (gameState.BoardHeight * 16) + 30);
             this.Size = new Size((gameState.BoardWidth * 32) + 10, (gameState.BoardHeight * 32) + 30);
@@ -129,5 +129,22 @@ namespace BattleTanksTest
         {
             canvas.Invalidate();
         }
+
+        // Game API
+        public State[,] Login(string name)
+        {
+            State[,] returnVal = new State[gameState.BoardWidth, gameState.BoardHeight];
+            for (int x = 0; x < gameState.BoardWidth; x++)
+            {
+                for (int y = 0; y < gameState.BoardHeight; y++)
+                {
+                    returnVal[x, y] = gameState.blocks[x, y];
+                }
+            }
+
+            return returnVal;
+        }
+
+
     }
 }
