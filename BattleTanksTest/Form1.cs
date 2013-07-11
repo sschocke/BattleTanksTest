@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Windows.Forms;
 using System.IO;
+using System.Threading;
 
 namespace BattleTanksTest
 {
@@ -111,7 +112,10 @@ namespace BattleTanksTest
 
         private void gameTimer_Tick(object sender, EventArgs e)
         {
-            gameState.currentTick++;
+            if (gameState.Running == true)
+            {
+                gameState.currentTick++;
+            }
             canvas.Invalidate();
         }
 
@@ -142,9 +146,59 @@ namespace BattleTanksTest
                 }
             }
 
+            gameState.loginCount++;
             return returnVal;
         }
 
+        public GameState GetStatus(int playerIdx)
+        {
+            GameState retval = new GameState(Program.MainForm.gameState, playerIdx);
+            return retval;
+        }
 
+        private void player1Worker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            State[,] layout = Program.MainForm.Login("Player 1");
+            GameState initialState = Program.MainForm.GetStatus(0);
+
+            ClientGameState myState = new ClientGameState(layout, initialState);
+
+            while (player1Worker.CancellationPending == false)
+            {
+                Thread.Sleep(100);
+            }
+        }
+
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            if (player1Worker.IsBusy)
+            {
+                player1Worker.CancelAsync();
+            }
+            if (player2Worker.IsBusy)
+            {
+                player2Worker.CancelAsync();
+            }
+        }
+
+        private void canvas_DoubleClick(object sender, EventArgs e)
+        {
+            player1Worker.RunWorkerAsync();
+            Thread.Sleep(1000);
+            player2Worker.RunWorkerAsync();
+        }
+
+        private void player2Worker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            State[,] layout = Program.MainForm.Login("Player 2");
+            GameState initialState = Program.MainForm.GetStatus(1);
+
+            ClientGameState myState = new ClientGameState(layout, initialState);
+
+            while (player2Worker.CancellationPending == false)
+            {
+                Thread.Sleep(100);
+            }
+        }
     }
 }

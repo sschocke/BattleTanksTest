@@ -8,7 +8,7 @@ namespace BattleTanksTest
     static class Program
     {
         private static Form1 mainForm;
-        public static Form1 Main { get { return mainForm; } }
+        public static Form1 MainForm { get { return mainForm; } }
 
         /// <summary>
         /// The main entry point for the application.

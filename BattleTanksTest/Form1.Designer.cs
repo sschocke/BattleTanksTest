@@ -31,6 +31,8 @@
             this.components = new System.ComponentModel.Container();
             this.canvas = new System.Windows.Forms.PictureBox();
             this.gameTimer = new System.Windows.Forms.Timer(this.components);
+            this.player1Worker = new System.ComponentModel.BackgroundWorker();
+            this.player2Worker = new System.ComponentModel.BackgroundWorker();
             ((System.ComponentModel.ISupportInitialize)(this.canvas)).BeginInit();
             this.SuspendLayout();
             // 
@@ -44,11 +46,22 @@
             this.canvas.TabIndex = 0;
             this.canvas.TabStop = false;
             this.canvas.Paint += new System.Windows.Forms.PaintEventHandler(this.canvas_Paint);
+            this.canvas.DoubleClick += new System.EventHandler(this.canvas_DoubleClick);
             // 
             // gameTimer
             // 
             this.gameTimer.Interval = 3000;
             this.gameTimer.Tick += new System.EventHandler(this.gameTimer_Tick);
+            // 
+            // player1Worker
+            // 
+            this.player1Worker.WorkerSupportsCancellation = true;
+            this.player1Worker.DoWork += new System.ComponentModel.DoWorkEventHandler(this.player1Worker_DoWork);
+            // 
+            // player2Worker
+            // 
+            this.player2Worker.WorkerSupportsCancellation = true;
+            this.player2Worker.DoWork += new System.ComponentModel.DoWorkEventHandler(this.player2Worker_DoWork);
             // 
             // Form1
             // 
@@ -60,6 +73,7 @@
             this.Text = "Form1";
             this.Activated += new System.EventHandler(this.Form1_Activated);
             this.Deactivate += new System.EventHandler(this.Form1_Deactivate);
+            this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.Form1_FormClosing);
             this.SizeChanged += new System.EventHandler(this.Form1_SizeChanged);
             ((System.ComponentModel.ISupportInitialize)(this.canvas)).EndInit();
             this.ResumeLayout(false);
@@ -70,6 +84,8 @@
 
         private System.Windows.Forms.PictureBox canvas;
         private System.Windows.Forms.Timer gameTimer;
+        private System.ComponentModel.BackgroundWorker player1Worker;
+        private System.ComponentModel.BackgroundWorker player2Worker;
     }
 }
 

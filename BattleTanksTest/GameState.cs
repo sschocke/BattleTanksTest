@@ -30,6 +30,50 @@ namespace BattleTanksTest
         }
     }
 
+    public struct BlockEvent
+    {
+        public Point point;
+        public State newState;
+    }
+
+    public struct UnitEvent
+    {
+        public int tick;
+        public Bullet bullet;
+        public Unit unit;
+    }
+
+    public class Events
+    {
+        public Queue<BlockEvent> blockEvents;
+        public Queue<UnitEvent> unitEvents;
+
+        public Events()
+        {
+            this.blockEvents = new Queue<BlockEvent>();
+            this.unitEvents = new Queue<UnitEvent>();
+        }
+
+        public Events(Events source)
+            :this()
+        {
+            foreach (BlockEvent ev in source.blockEvents)
+            {
+                this.blockEvents.Enqueue(ev);
+            }
+            foreach (UnitEvent ev in source.unitEvents)
+            {
+                this.unitEvents.Enqueue(ev);
+            }
+        }
+
+        public void Clear()
+        {
+            this.blockEvents.Clear();
+            this.unitEvents.Clear();
+        }
+    }
+
     public class Unit
     {
         public Action action;
@@ -72,6 +116,7 @@ namespace BattleTanksTest
     {
         public int currentTick;
         public Player[] players;
+        public Events events;
 
         protected GameState()
         {
@@ -79,6 +124,7 @@ namespace BattleTanksTest
             this.players = new Player[2];
             this.players[0] = new Player("Player 1");
             this.players[1] = new Player("Player 2");
+            this.events = new Events();
         }
 
         public GameState(GameState source)
@@ -87,12 +133,32 @@ namespace BattleTanksTest
             this.players = new Player[2];
             this.players[0] = new Player(source.players[0]);
             this.players[1] = new Player(source.players[1]);
+            this.events = new Events(source.events);
+        }
+        public GameState(ServerGameState source, int playerIdx)
+        {
+            this.currentTick = source.currentTick;
+            this.players = new Player[2];
+            this.players[0] = new Player(source.players[0]);
+            this.players[1] = new Player(source.players[1]);
+            this.events = new Events(source.playerEvents[playerIdx]);
         }
     }
 
-    private class ServerGameState : GameState
+    public class ClientGameState : GameState
     {
         public State[,] blocks;
+
+        public ClientGameState(State[,] layout, GameState state)
+            :base(state)
+        {
+            this.blocks = layout;
+        }
+    }
+    public class ServerGameState : GameState
+    {
+        public State[,] blocks;
+        public Events[] playerEvents;
 
         public ServerGameState(string layout)
             : base()
@@ -104,7 +170,23 @@ namespace BattleTanksTest
             this.blocks = new State[width, height];
             fillBoard(rows);
             setupTanks();
+
+            this.playerEvents = new Events[2];
+            this.playerEvents[0] = new Events();
+            this.playerEvents[1] = new Events();
         }
+
+        public void AddBlockEvent(BlockEvent ev)
+        {
+            this.playerEvents[0].blockEvents.Enqueue(ev);
+            this.playerEvents[1].blockEvents.Enqueue(ev);
+        }
+        public void AddUnitEvent(UnitEvent ev)
+        {
+            this.playerEvents[0].unitEvents.Enqueue(ev);
+            this.playerEvents[1].unitEvents.Enqueue(ev);
+        }
+
         private void setupTanks()
         {
             for (int p = 0; p < players.Length; p++)
@@ -160,5 +242,8 @@ namespace BattleTanksTest
 
         public int BoardWidth { get { return blocks.GetLength(0); } }
         public int BoardHeight { get { return blocks.GetLength(1); } }
+
+        public int loginCount;
+        public bool Running { get { return loginCount >= 2; } }
     }
 }
