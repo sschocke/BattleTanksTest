@@ -15,11 +15,13 @@ namespace BattleTanksTest
     public partial class Form1 : Form
     {
         public Font gridFont;
-        public ServerGameState gameState;
+        public volatile ServerGameState gameState;
         public Rectangle gridRect;
 
         public AIDebugWindow p1Debug;
         public AIDebugWindow p2Debug;
+
+        private Mutex apiAccess;
 
         public Form1()
         {
@@ -31,12 +33,14 @@ namespace BattleTanksTest
 #if DEBUG
             this.MinimumSize = new Size((gameState.BoardWidth * 16) + 10, (gameState.BoardHeight * 16) + 30);
             this.Size = new Size((gameState.BoardWidth * 32) + 10, (gameState.BoardHeight * 32) + 30);
-            this.gameTimer.Interval = 2000;
+            this.gameTimer.Interval = 1000;
 #else
             this.MinimumSize = new Size((gameState.BoardWidth * 8) + 10, (gameState.BoardHeight * 8) + 30);
             this.Size = new Size((gameState.BoardWidth * 8) + 10, (gameState.BoardHeight * 8) + 30);
 #endif
             this.StartPosition = FormStartPosition.CenterScreen;
+
+            this.apiAccess = new Mutex();
         }
 
         private void canvas_Paint(object sender, PaintEventArgs e)
@@ -134,10 +138,17 @@ namespace BattleTanksTest
                 return;
             }
 
-            List<Action[]> legalActions = gameState.GetLegalActions(0);
-            gameState.currentTick++;
-            gameState.UpdateGameState();
-            canvas.Invalidate();
+            this.apiAccess.WaitOne();
+            try
+            {
+                gameState.UpdateGameState();
+                canvas.Invalidate();
+                gameState.currentTick++;
+            }
+            finally
+            {
+                this.apiAccess.ReleaseMutex();
+            }
         }
 
         private void canvas_DoubleClick(object sender, EventArgs e)
@@ -191,36 +202,60 @@ namespace BattleTanksTest
         // Game API
         public State[,] Login(string name)
         {
-            State[,] returnVal = new State[gameState.BoardWidth, gameState.BoardHeight];
-            for (int x = 0; x < gameState.BoardWidth; x++)
+            this.apiAccess.WaitOne();
+            try
             {
-                for (int y = 0; y < gameState.BoardHeight; y++)
+                State[,] returnVal = new State[gameState.BoardWidth, gameState.BoardHeight];
+                for (int x = 0; x < gameState.BoardWidth; x++)
                 {
-                    returnVal[x, y] = gameState.blocks[x, y];
+                    for (int y = 0; y < gameState.BoardHeight; y++)
+                    {
+                        returnVal[x, y] = gameState.blocks[x, y];
+                    }
                 }
-            }
 
-            gameState.loginCount++;
-            return returnVal;
+                gameState.loginCount++;
+                return returnVal;
+            }
+            finally
+            {
+                this.apiAccess.ReleaseMutex();
+            }
         }
         public GameState GetStatus(int playerIdx)
         {
-            GameState retval = new GameState(Program.MainForm.gameState, playerIdx);
-            return retval;
+            this.apiAccess.WaitOne();
+            try
+            {
+                GameState retval = new GameState(Program.MainForm.gameState, playerIdx);
+                return retval;
+            }
+            finally
+            {
+                this.apiAccess.ReleaseMutex();
+            }
         }
         public void SetAction(int playerIdx, int unitID, Action action)
         {
-            Player player = Program.MainForm.gameState.players[playerIdx];
-            Unit unit = player.GetUnit(unitID);
-            if (unit != null)
+            this.apiAccess.WaitOne();
+            try
             {
-                unit.action = action;
+                Player player = Program.MainForm.gameState.players[playerIdx];
+                Unit unit = player.GetUnit(unitID);
+                if (unit != null)
+                {
+                    unit.action = action;
+                }
+            }
+            finally
+            {
+                this.apiAccess.ReleaseMutex();
             }
         }
 
         private void player1Worker_DoWork(object sender, DoWorkEventArgs e)
         {
-            Random rnd = new Random(0);
+            Random rnd = new Random();
             State[,] layout = Program.MainForm.Login("Player 1");
             GameState initialState = Program.MainForm.GetStatus(0);
 
@@ -234,20 +269,21 @@ namespace BattleTanksTest
                 if (curState.events.blockEvents.Count > 0)
                 {
                     p1Debug.AddLog("Player 1 received " + curState.events.blockEvents.Count + " unseen block events");
+                    myState.ProcessEvents(curState.events);
                 }
                 if (curState.currentTick > myState.currentTick)
                 {
-                    myState = new ClientGameState(layout, curState, 0);
+                    myState = new ClientGameState(myState.blocks, curState, 0);
                     myState.ProcessEvents(curState.events);
+                    BruteForceAgent(rnd, myState, p1Debug);
                 }
 
-                BruteForceAgent(myState);
                 Thread.Sleep(100);
             }
         }
         private void player2Worker_DoWork(object sender, DoWorkEventArgs e)
         {
-            Random rnd = new Random(0);
+            Random rnd = new Random();
             State[,] layout = Program.MainForm.Login("Player 2");
             GameState initialState = Program.MainForm.GetStatus(1);
 
@@ -262,19 +298,20 @@ namespace BattleTanksTest
                 if (curState.events.blockEvents.Count > 0)
                 {
                     p2Debug.AddLog("Player 2 received " + curState.events.blockEvents.Count + " unseen block events");
+                    myState.ProcessEvents(curState.events);
                 }
                 if (curState.currentTick > myState.currentTick)
                 {
-                    myState = new ClientGameState(layout, curState, 1);
+                    myState = new ClientGameState(myState.blocks, curState, 1);
                     myState.ProcessEvents(curState.events);
+                    RandomAgent(rnd, myState, p2Debug);
                 }
 
-                RandomAgent(rnd, myState);
                 Thread.Sleep(100);
             }
         }
 
-        private static void RandomAgent(Random rnd, ClientGameState myState)
+        private static void RandomAgent(Random rnd, ClientGameState myState, AIDebugWindow debugWin)
         {
             List<Action[]> legalActions = myState.GetLegalActions(myState.myPlayerIdx);
             if (legalActions.Count < 1)
@@ -286,11 +323,12 @@ namespace BattleTanksTest
             Action[] picked = legalActions[pickActions];
             for (int idx = 0; idx < myState.players[myState.myPlayerIdx].units.Count; idx++)
             {
+                debugWin.AddLog("Unit " + idx + " : Action=" + picked[idx]);
                 Program.MainForm.SetAction(myState.myPlayerIdx, myState.players[myState.myPlayerIdx].units[idx].id, picked[idx]);
             }
         }
 
-        private static void BruteForceAgent(ClientGameState myState)
+        private static void BruteForceAgent(Random rnd, ClientGameState myState, AIDebugWindow debugWin)
         {
             int closestTankIdx = -1;
             Size closestTankDist = new Size(myState.BoardWidth,myState.BoardHeight);
@@ -360,7 +398,8 @@ namespace BattleTanksTest
                     {
                         desiredAction = Action.RIGHT;
                     }
-                    else {
+                    else
+                    {
                         desiredAction = Action.LEFT;
                     }
                 }
@@ -381,8 +420,21 @@ namespace BattleTanksTest
             {
                 if (actionSet[closestTankIdx] == desiredAction)
                 {
-                    Program.MainForm.SetAction(myState.myPlayerIdx, closestTank.id, actionSet[closestTankIdx]);
+                    for (int idx = 0; idx < myState.players[myState.myPlayerIdx].units.Count; idx++)
+                    {
+                        debugWin.AddLog("Unit " + idx + " : Action=" + actionSet[idx]);
+                        Program.MainForm.SetAction(myState.myPlayerIdx, myState.players[myState.myPlayerIdx].units[idx].id, actionSet[idx]);
+                    }
+                    return;
                 }
+            }
+
+            int pickActions = rnd.Next(legalActions.Count);
+            Action[] picked = legalActions[pickActions];
+            for (int idx = 0; idx < myState.players[myState.myPlayerIdx].units.Count; idx++)
+            {
+                debugWin.AddLog("Unit " + idx + " : Action=" + picked[idx]);
+                Program.MainForm.SetAction(myState.myPlayerIdx, myState.players[myState.myPlayerIdx].units[idx].id, picked[idx]);
             }
         }
     }

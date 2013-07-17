@@ -341,49 +341,51 @@ namespace BattleTanksTest
 
             for (int unitIdx = 0; unitIdx < this.players[playerIdx].units.Count; unitIdx++)
             {
+                Unit tank = this.players[playerIdx].units[unitIdx];
+
                 switch (actions[unitIdx])
                 {
                     case Action.NONE:
                     case Action.FIRE:
                         break;
                     case Action.LEFT:
-                        newX = this.players[playerIdx].units[unitIdx].x - 1;
-                        newY = this.players[playerIdx].units[unitIdx].y;
+                        newX = tank.x - 1;
+                        newY = tank.y;
 
                         if (newX < 2) return false;
                         for (int uy = newY - 2; uy <= newY + 2; uy++)
                         {
-                            if (this.blocks[newX - 2, uy] != State.EMPTY) return false;
+                            if ((this.blocks[newX - 2, uy] != State.EMPTY) && (tank.direction == Direction.LEFT)) return false;
                         }
                         break;
                     case Action.RIGHT:
-                        newX = this.players[playerIdx].units[unitIdx].x + 1;
-                        newY = this.players[playerIdx].units[unitIdx].y;
+                        newX = tank.x + 1;
+                        newY = tank.y;
 
                         if (newX >= this.BoardWidth - 2) return false;
                         for (int uy = newY - 2; uy <= newY + 2; uy++)
                         {
-                            if (this.blocks[newX + 2, uy] != State.EMPTY) return false;
+                            if ((this.blocks[newX + 2, uy] != State.EMPTY) && (tank.direction == Direction.RIGHT)) return false;
                         }
                         break;
                     case Action.UP:
-                        newX = this.players[playerIdx].units[unitIdx].x;
-                        newY = this.players[playerIdx].units[unitIdx].y - 1;
+                        newX = tank.x;
+                        newY = tank.y - 1;
 
                         if (newY < 2) return false;
                         for (int ux = newX - 2; ux <= newX + 2; ux++)
                         {
-                            if (this.blocks[ux, newY - 2] != State.EMPTY) return false;
+                            if ((this.blocks[ux, newY - 2] != State.EMPTY) && (tank.direction == Direction.UP)) return false;
                         }
                         break;
                     case Action.DOWN:
-                        newX = this.players[playerIdx].units[unitIdx].x;
-                        newY = this.players[playerIdx].units[unitIdx].y + 1;
+                        newX = tank.x;
+                        newY = tank.y + 1;
 
                         if (newY >= this.BoardHeight - 2) return false;
                         for (int ux = newX - 2; ux <= newX + 2; ux++)
                         {
-                            if (this.blocks[ux, newY + 2] != State.EMPTY) return false;
+                            if ((this.blocks[ux, newY + 2] != State.EMPTY) && (tank.direction == Direction.DOWN)) return false;
                         }
                         break;
                     default:
@@ -394,9 +396,8 @@ namespace BattleTanksTest
             return true;
         }
 
-        private void moveAndCollideBullets()
+        private void moveBullets()
         {
-            List<Bullet> allBullets = new List<Bullet>();
             for (int playerIdx = 0; playerIdx < 2; playerIdx++)
             {
                 List<Bullet> bullets = this.players[playerIdx].bullets;
@@ -419,71 +420,99 @@ namespace BattleTanksTest
                     }
                 }
 
-                allBullets.AddRange(bullets);
-            }
-
-            for (int playerIdx = 0; playerIdx < 2; playerIdx++)
-            {
-                Bullet[] bullets = this.players[playerIdx].bullets.ToArray();
-                foreach (Bullet bullet in bullets)
-                {
-                    if (bullet.x < 0 || bullet.x >= this.BoardWidth || bullet.y < 0 || bullet.y >= this.BoardHeight)
-                    {
-                        destroyBullets(bullet.x, bullet.y);
-                        allBullets.Remove(bullet);
-                        continue;
-                    }
-                    if (this.blocks[bullet.x, bullet.y] == State.FULL)
-                    {
-                        destroyWall(bullet);
-                        destroyBullets(bullet.x, bullet.y);
-                        allBullets.Remove(bullet);
-                    }
-                    Unit unitHit = anyUnitAt(bullet.x, bullet.y);
-                    if (unitHit != null)
-                    {
-                        destroyUnit(unitHit);
-                        destroyBullets(bullet.x, bullet.y);
-                        allBullets.Remove(bullet);
-                    }
-                    int baseHit = anyBaseAt(bullet.x, bullet.y);
-                    if (baseHit >= 0)
-                    {
-                        this.players[playerIdx].playerBase = new Base(-1, -1);
-                    }
-                    var bulletQry = from b in allBullets
-                                    where b.x == bullet.x && b.y == bullet.y && b.id != bullet.id
-                                    select b;
-                    if (bulletQry.Count() > 0)
-                    {
-                        destroyBullets(bullet.x, bullet.y);
-                    }
-                }
+                checkCollisions();
             }
         }
 
         private void applyPlayerActions(int playerIdx, Action[] actions)
         {
+            int newX, newY;
+            bool blocked = false;
+
+            //bool test = isPseudoLegal(playerIdx, actions);
             for (int unitIdx = 0; unitIdx < this.players[playerIdx].units.Count; unitIdx++)
             {
+                Unit tank = this.players[playerIdx].units[unitIdx];
+                blocked = false;
+
                 switch (actions[unitIdx])
                 {
                     case Action.NONE:
                         break;
                     case Action.LEFT:
-                        this.players[playerIdx].units[unitIdx].x--;
+                        newX = tank.x - 1;
+                        newY = tank.y;
+
+                        if (newX < 2) throw new InvalidOperationException("Player " + playerIdx + " Tank " + unitIdx + " : Illegal Move LEFT(Left Border Reached)");
+                        for (int uy = newY - 2; uy <= newY + 2; uy++)
+                        {
+                            if (this.blocks[newX - 2, uy] != State.EMPTY)
+                            {
+                                if (tank.direction == Direction.LEFT)
+                                {
+                                    throw new InvalidOperationException("Player " + playerIdx + " Tank " + unitIdx + " : Illegal Move LEFT(Wall Hit and Already facing Left)");
+                                }
+                                blocked = true;
+                            }
+                        }
+                        if (!blocked) this.players[playerIdx].units[unitIdx].x--;
                         this.players[playerIdx].units[unitIdx].direction = Direction.LEFT;
                         break;
                     case Action.RIGHT:
-                        this.players[playerIdx].units[unitIdx].x++;
+                        newX = tank.x + 1;
+                        newY = tank.y;
+
+                        if (newX >= this.BoardWidth - 2) throw new InvalidOperationException("Player " + playerIdx + " Tank " + unitIdx + " : Illegal Move RIGHT(Right Border Reached)");
+                        for (int uy = newY - 2; uy <= newY + 2; uy++)
+                        {
+                            if (this.blocks[newX + 2, uy] != State.EMPTY)
+                            {
+                                if (tank.direction == Direction.RIGHT)
+                                {
+                                    throw new InvalidOperationException("Player " + playerIdx + " Tank " + unitIdx + " : Illegal Move RIGHT(Wall Hit and Already facing Right)");
+                                }
+                                blocked = true;
+                            }
+                        }
+                        if (!blocked) this.players[playerIdx].units[unitIdx].x++;
                         this.players[playerIdx].units[unitIdx].direction = Direction.RIGHT;
                         break;
                     case Action.UP:
-                        this.players[playerIdx].units[unitIdx].y--;
+                        newX = tank.x;
+                        newY = tank.y - 1;
+
+                        if (newY < 2) throw new InvalidOperationException("Player " + playerIdx + " Tank " + unitIdx + " : Illegal Move UP(Top Border Reached)");
+                        for (int ux = newX - 2; ux <= newX + 2; ux++)
+                        {
+                            if (this.blocks[ux, newY - 2] != State.EMPTY)
+                            {
+                                if (tank.direction == Direction.UP)
+                                {
+                                    throw new InvalidOperationException("Player " + playerIdx + " Tank " + unitIdx + " : Illegal Move UP(Wall Hit and Already facing Up)");
+                                }
+                                blocked = true;
+                            }
+                        }
+                        if (!blocked) this.players[playerIdx].units[unitIdx].y--;
                         this.players[playerIdx].units[unitIdx].direction = Direction.UP;
                         break;
                     case Action.DOWN:
-                        this.players[playerIdx].units[unitIdx].y++;
+                        newX = tank.x;
+                        newY = tank.y + 1;
+
+                        if (newY >= this.BoardHeight - 2) throw new InvalidOperationException("Player " + playerIdx + " Tank " + unitIdx + " : Illegal Move DOWN(Bottom Border Reached)");
+                        for (int ux = newX - 2; ux <= newX + 2; ux++)
+                        {
+                            if (this.blocks[ux, newY + 2] != State.EMPTY)
+                            {
+                                if (tank.direction == Direction.DOWN)
+                                {
+                                    throw new InvalidOperationException("Player " + playerIdx + " Tank " + unitIdx + " : Illegal Move DOWN(Wall Hit and Already facing Down)");
+                                }
+                                blocked = true;
+                            }
+                        }
+                        if (!blocked) this.players[playerIdx].units[unitIdx].y++;
                         this.players[playerIdx].units[unitIdx].direction = Direction.DOWN;
                         break;
                     case Action.FIRE:
@@ -508,7 +537,7 @@ namespace BattleTanksTest
             }
         }
 
-        private void collideBullets()
+        private void checkCollisions()
         {
             List<Bullet> allBullets = new List<Bullet>();
             for (int playerIdx = 0; playerIdx < 2; playerIdx++)
@@ -544,7 +573,7 @@ namespace BattleTanksTest
                     int baseHit = anyBaseAt(bullet.x, bullet.y);
                     if (baseHit >= 0)
                     {
-                        this.players[playerIdx].playerBase = new Base(-1, -1);
+                        this.players[baseHit].playerBase = new Base(-1, -1);
                     }
                     var bulletQry = from b in allBullets
                                     where b.x == bullet.x && b.y == bullet.y && b.id != bullet.id
@@ -647,7 +676,9 @@ namespace BattleTanksTest
 
         public void UpdateGameState()
         {
-            this.moveAndCollideBullets();
+            this.moveBullets();
+
+            this.moveBullets();
 
             for (int playerIdx = 0; playerIdx < 2; playerIdx++)
             {
@@ -660,7 +691,7 @@ namespace BattleTanksTest
                 this.applyPlayerActions(playerIdx, actions);
             }
 
-            this.collideBullets();
+            this.checkCollisions();
         }
 
         public virtual void ProcessEvents(Events events) { }
@@ -684,6 +715,8 @@ namespace BattleTanksTest
                 Debug.WriteLine("Player " + (this.myPlayerIdx + 1).ToString() + " : Marking block at " + ev.point.ToString() + " as " + ev.newState.ToString());
                 this.blocks[ev.point.X, ev.point.Y] = ev.newState;
             }
+
+            events.Clear();
         }
 
         public Player Me { get { return this.players[this.myPlayerIdx]; } }

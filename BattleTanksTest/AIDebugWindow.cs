@@ -6,6 +6,7 @@ using System.Drawing;
 using System.Linq;
 using System.Text;
 using System.Windows.Forms;
+using System.Diagnostics;
 
 namespace BattleTanksTest
 {
@@ -14,6 +15,7 @@ namespace BattleTanksTest
         private int myPlayerIdx;
         private ClientGameState state = null;
         private Rectangle gridRect;
+        private string myPlayerName;
 
         public AIDebugWindow(string playerName, int playerIdx)
         {
@@ -21,6 +23,7 @@ namespace BattleTanksTest
 
             this.Text = "Debug Window - " + playerName;
             this.myPlayerIdx = playerIdx;
+            this.myPlayerName = playerName;
             this.addLogDel = new AddLogDelegate(this.AddLog);
         }
 
@@ -41,6 +44,7 @@ namespace BattleTanksTest
             else
             {
                 this.txtLog.AppendText(text + Environment.NewLine);
+                Debug.WriteLine(myPlayerName + ":" + text);
             }
         }
 
