@@ -52,6 +52,7 @@
     <Compile Include="AIDebugWindow.Designer.cs">
       <DependentUpon>AIDebugWindow.cs</DependentUpon>
     </Compile>
+    <Compile Include="MiniMaxAgent.cs" />
     <Compile Include="Form1.cs">
       <SubType>Form</SubType>
     </Compile>

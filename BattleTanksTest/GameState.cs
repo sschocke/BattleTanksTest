@@ -396,35 +396,30 @@ namespace BattleTanksTest
             return true;
         }
 
-        private void moveBullets()
+        private void moveBullets(int playerIdx)
         {
-            for (int playerIdx = 0; playerIdx < 2; playerIdx++)
+            List<Bullet> bullets = this.players[playerIdx].bullets;
+            foreach (Bullet bullet in bullets)
             {
-                List<Bullet> bullets = this.players[playerIdx].bullets;
-                foreach (Bullet bullet in bullets)
+                switch (bullet.direction)
                 {
-                    switch (bullet.direction)
-                    {
-                        case Direction.UP:
-                            bullet.y--;
-                            break;
-                        case Direction.DOWN:
-                            bullet.y++;
-                            break;
-                        case Direction.LEFT:
-                            bullet.x--;
-                            break;
-                        case Direction.RIGHT:
-                            bullet.x++;
-                            break;
-                    }
+                    case Direction.UP:
+                        bullet.y--;
+                        break;
+                    case Direction.DOWN:
+                        bullet.y++;
+                        break;
+                    case Direction.LEFT:
+                        bullet.x--;
+                        break;
+                    case Direction.RIGHT:
+                        bullet.x++;
+                        break;
                 }
-
-                checkCollisions();
             }
         }
 
-        private void applyPlayerActions(int playerIdx, Action[] actions)
+        private void applyPlayerMovement(int playerIdx, Action[] actions)
         {
             int newX, newY;
             bool blocked = false;
@@ -438,6 +433,7 @@ namespace BattleTanksTest
                 switch (actions[unitIdx])
                 {
                     case Action.NONE:
+                    case Action.FIRE:
                         break;
                     case Action.LEFT:
                         newX = tank.x - 1;
@@ -455,6 +451,8 @@ namespace BattleTanksTest
                                 blocked = true;
                             }
                         }
+                        if (anyUnitAt(newX, newY, tank) != null) blocked = true;
+
                         if (!blocked) this.players[playerIdx].units[unitIdx].x--;
                         this.players[playerIdx].units[unitIdx].direction = Direction.LEFT;
                         break;
@@ -474,6 +472,8 @@ namespace BattleTanksTest
                                 blocked = true;
                             }
                         }
+                        if (anyUnitAt(newX, newY, tank) != null) blocked = true;
+
                         if (!blocked) this.players[playerIdx].units[unitIdx].x++;
                         this.players[playerIdx].units[unitIdx].direction = Direction.RIGHT;
                         break;
@@ -493,6 +493,8 @@ namespace BattleTanksTest
                                 blocked = true;
                             }
                         }
+                        if (anyUnitAt(newX, newY, tank) != null) blocked = true;
+
                         if (!blocked) this.players[playerIdx].units[unitIdx].y--;
                         this.players[playerIdx].units[unitIdx].direction = Direction.UP;
                         break;
@@ -512,11 +514,23 @@ namespace BattleTanksTest
                                 blocked = true;
                             }
                         }
+                        if (anyUnitAt(newX, newY, tank) != null) blocked = true;
+
                         if (!blocked) this.players[playerIdx].units[unitIdx].y++;
                         this.players[playerIdx].units[unitIdx].direction = Direction.DOWN;
                         break;
+                }
+            }
+        }
+        private void applyPlayerFire(int playerIdx, Action[] actions)
+        {
+            for (int unitIdx = 0; unitIdx < this.players[playerIdx].units.Count; unitIdx++)
+            {
+                Unit sourceTank = this.players[playerIdx].units[unitIdx];
+
+                switch (actions[unitIdx])
+                {
                     case Action.FIRE:
-                        Unit sourceTank = this.players[playerIdx].units[unitIdx];
                         switch (sourceTank.direction)
                         {
                             case Direction.UP:
@@ -537,7 +551,7 @@ namespace BattleTanksTest
             }
         }
 
-        private void checkCollisions()
+        private void checkCollisions(bool bulletsOnly)
         {
             List<Bullet> allBullets = new List<Bullet>();
             for (int playerIdx = 0; playerIdx < 2; playerIdx++)
@@ -563,6 +577,16 @@ namespace BattleTanksTest
                         destroyBullets(bullet.x, bullet.y);
                         allBullets.Remove(bullet);
                     }
+                    var bulletQry = from b in allBullets
+                                    where b.x == bullet.x && b.y == bullet.y && b.id != bullet.id
+                                    select b;
+                    if (bulletQry.Count() > 0)
+                    {
+                        destroyBullets(bullet.x, bullet.y);
+                    }
+
+                    if (bulletsOnly == true) continue;
+
                     Unit unitHit = anyUnitAt(bullet.x, bullet.y);
                     if (unitHit != null)
                     {
@@ -575,12 +599,10 @@ namespace BattleTanksTest
                     {
                         this.players[baseHit].playerBase = new Base(-1, -1);
                     }
-                    var bulletQry = from b in allBullets
-                                    where b.x == bullet.x && b.y == bullet.y && b.id != bullet.id
-                                    select b;
-                    if (bulletQry.Count() > 0)
+                    Unit baseHitByTank = anyUnitAt(this.players[playerIdx].playerBase.x, this.players[playerIdx].playerBase.y);
+                    if (baseHitByTank != null)
                     {
-                        destroyBullets(bullet.x, bullet.y);
+                        this.players[playerIdx].playerBase = new Base(-1, -1);
                     }
                 }
             }
@@ -609,12 +631,17 @@ namespace BattleTanksTest
 
         private Unit anyUnitAt(int x, int y)
         {
+            return anyUnitAt(x, y, null);
+        }
+        private Unit anyUnitAt(int x, int y, Unit excl)
+        {
             for (int playerIdx = 0; playerIdx < 2; playerIdx++)
             {
                 foreach (Unit unit in this.players[playerIdx].units)
                 {
                     if ((x >= unit.x - 2) && (x <= unit.x + 2) &&
-                        (y >= unit.y - 2) && (y <= unit.y + 2))
+                        (y >= unit.y - 2) && (y <= unit.y + 2) && 
+                        ((excl == null) || (excl.id != unit.id)))
                     {
                         return unit;
                     }
@@ -676,9 +703,15 @@ namespace BattleTanksTest
 
         public void UpdateGameState()
         {
-            this.moveBullets();
+            this.moveBullets(0);
+            this.checkCollisions(false);
+            this.moveBullets(1);
+            this.checkCollisions(false);
 
-            this.moveBullets();
+            this.moveBullets(0);
+            this.checkCollisions(true);
+            this.moveBullets(1);
+            this.checkCollisions(true);
 
             for (int playerIdx = 0; playerIdx < 2; playerIdx++)
             {
@@ -688,10 +721,38 @@ namespace BattleTanksTest
                     actions[unitIdx] = this.players[playerIdx].units[unitIdx].action;
                 }
 
-                this.applyPlayerActions(playerIdx, actions);
+                this.applyPlayerMovement(playerIdx, actions);
             }
 
-            this.checkCollisions();
+            this.checkCollisions(false);
+
+            for (int playerIdx = 0; playerIdx < 2; playerIdx++)
+            {
+                Action[] actions = new Action[this.players[playerIdx].units.Count];
+                for (int unitIdx = 0; unitIdx < this.players[playerIdx].units.Count; unitIdx++)
+                {
+                    actions[unitIdx] = this.players[playerIdx].units[unitIdx].action;
+                }
+
+                this.applyPlayerFire(playerIdx, actions);
+            }
+
+            this.checkCollisions(false);
+        }
+        public bool IsPlayerWinning(int playerIdx)
+        {
+            int opponentIdx = (playerIdx + 1) % 2;
+            bool isOpponentLosing = this.IsPlayerLosing(opponentIdx);
+            if (isOpponentLosing == false) return false;
+
+            bool amILosing = this.IsPlayerLosing(playerIdx);
+            if( amILosing && isOpponentLosing) return false;
+
+            return true; 
+        }
+        public bool IsPlayerLosing(int playerIdx)
+        {
+            return ((this.players[playerIdx].playerBase.x == -1) && (this.players[playerIdx].playerBase.y == -1));
         }
 
         public virtual void ProcessEvents(Events events) { }
@@ -708,6 +769,12 @@ namespace BattleTanksTest
             this.myPlayerIdx = myIdx;
         }
 
+        public ClientGameState(ClientGameState source)
+            :base(source)
+        {
+            this.myPlayerIdx = source.myPlayerIdx;
+        }
+
         public override void ProcessEvents(Events events)
         {
             foreach (BlockEvent ev in events.blockEvents)
@@ -721,6 +788,14 @@ namespace BattleTanksTest
 
         public Player Me { get { return this.players[this.myPlayerIdx]; } }
         public Player Opponent { get { return this.players[(this.myPlayerIdx + 1) % 2]; } }
+
+        public bool Won { get { return this.IsPlayerWinning(myPlayerIdx); } }
+        public bool Lost { get { return this.IsPlayerLosing(myPlayerIdx); } }
+
+        public double Evaluate()
+        {
+            return 0.0;
+        }
     }
     public class ServerGameState : GameStateWithLayout
     {
@@ -782,5 +857,6 @@ namespace BattleTanksTest
 
         public int loginCount;
         public bool Running { get { return loginCount >= 2; } }
+        public bool GameOver { get { return (IsPlayerLosing(0) || IsPlayerLosing(1)); } }
     }
 }

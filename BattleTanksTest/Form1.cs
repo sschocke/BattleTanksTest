@@ -33,7 +33,7 @@ namespace BattleTanksTest
 #if DEBUG
             this.MinimumSize = new Size((gameState.BoardWidth * 16) + 10, (gameState.BoardHeight * 16) + 30);
             this.Size = new Size((gameState.BoardWidth * 32) + 10, (gameState.BoardHeight * 32) + 30);
-            this.gameTimer.Interval = 1000;
+            this.gameTimer.Interval = 300;
 #else
             this.MinimumSize = new Size((gameState.BoardWidth * 8) + 10, (gameState.BoardHeight * 8) + 30);
             this.Size = new Size((gameState.BoardWidth * 8) + 10, (gameState.BoardHeight * 8) + 30);
@@ -132,6 +132,11 @@ namespace BattleTanksTest
 
         private void gameTimer_Tick(object sender, EventArgs e)
         {
+            if (gameState.GameOver)
+            {
+                return;
+            }
+
             if (gameState.Running == false)
             {
                 canvas.Invalidate();
@@ -144,6 +149,25 @@ namespace BattleTanksTest
                 gameState.UpdateGameState();
                 canvas.Invalidate();
                 gameState.currentTick++;
+                if (gameState.GameOver)
+                {
+                    gameTimer.Stop();
+                    player1Worker.CancelAsync();
+                    player2Worker.CancelAsync();
+
+                    if (gameState.IsPlayerWinning(0))
+                    {
+                        MessageBox.Show("Player 1 Wins");
+                    }
+                    else if (gameState.IsPlayerWinning(1))
+                    {
+                        MessageBox.Show("Player 2 Wins");
+                    }
+                    else
+                    {
+                        MessageBox.Show("Draw");
+                    }
+                }
             }
             finally
             {
@@ -258,6 +282,7 @@ namespace BattleTanksTest
             Random rnd = new Random();
             State[,] layout = Program.MainForm.Login("Player 1");
             GameState initialState = Program.MainForm.GetStatus(0);
+            MiniMaxAgent agent = new MiniMaxAgent(p1Debug);
 
             ClientGameState myState = new ClientGameState(layout, initialState, 0);
             while (player1Worker.CancellationPending == false)
@@ -275,7 +300,12 @@ namespace BattleTanksTest
                 {
                     myState = new ClientGameState(myState.blocks, curState, 0);
                     myState.ProcessEvents(curState.events);
-                    BruteForceAgent(rnd, myState, p1Debug);
+                    Action[] actions = agent.GetAction(myState);
+                    for (int idx = 0; idx < myState.Me.units.Count; idx++)
+                    {
+                        p1Debug.AddLog("Unit " + idx + " : Action=" + actions[idx]);
+                        Program.MainForm.SetAction(myState.myPlayerIdx, myState.players[myState.myPlayerIdx].units[idx].id, actions[idx]);
+                    }
                 }
 
                 Thread.Sleep(100);
@@ -304,7 +334,7 @@ namespace BattleTanksTest
                 {
                     myState = new ClientGameState(myState.blocks, curState, 1);
                     myState.ProcessEvents(curState.events);
-                    RandomAgent(rnd, myState, p2Debug);
+                    GoalAgent(rnd, myState, p2Debug);
                 }
 
                 Thread.Sleep(100);
@@ -432,6 +462,174 @@ namespace BattleTanksTest
             int pickActions = rnd.Next(legalActions.Count);
             Action[] picked = legalActions[pickActions];
             for (int idx = 0; idx < myState.players[myState.myPlayerIdx].units.Count; idx++)
+            {
+                debugWin.AddLog("Unit " + idx + " : Action=" + picked[idx]);
+                Program.MainForm.SetAction(myState.myPlayerIdx, myState.players[myState.myPlayerIdx].units[idx].id, picked[idx]);
+            }
+        }
+
+        private static void GoalAgent(Random rnd, ClientGameState myState, AIDebugWindow debugWin)
+        {
+            int avoidedLosing = 0;
+            List<Action[]> legalActions = myState.GetLegalActions(myState.myPlayerIdx);
+            if (legalActions.Count < 1)
+            {
+                return;
+            }
+
+            List<Action[]> validActions = new List<Action[]>();
+            foreach(Action[] action in legalActions)
+            {
+                ClientGameState afterState = new ClientGameState(myState);
+                for (int unitIdx = 0; unitIdx < afterState.Me.units.Count; unitIdx++)
+                {
+                    afterState.Me.units[unitIdx].action = action[unitIdx];
+                }
+                for (int unitIdx = 0; unitIdx < afterState.Opponent.units.Count; unitIdx++)
+                {
+                    afterState.Opponent.units[unitIdx].action = Action.NONE;
+                }
+
+                afterState.UpdateGameState();
+                if (afterState.Lost == false)
+                {
+                    validActions.Add(action);
+                }
+                else
+                {
+                    avoidedLosing++;
+                }
+            }
+            if (validActions.Count < 1)
+            {
+                return;
+            }
+
+
+            int closestTankIdx = -1;
+            Size closestTankDist = new Size(myState.BoardWidth, myState.BoardHeight);
+
+            Player me = myState.Me;
+            Player enemy = myState.Opponent;
+
+            for (int idx = 0; idx < me.units.Count; idx++)
+            {
+                Unit tank = me.units[idx];
+                Size distToEnemyBase = Utils.DistanceBetween(tank, enemy.playerBase);
+                if (distToEnemyBase.Width + distToEnemyBase.Height < closestTankDist.Width + closestTankDist.Height)
+                {
+                    closestTankDist = distToEnemyBase;
+                    closestTankIdx = idx;
+                }
+            }
+
+            Unit closestTank = me.units[closestTankIdx];
+            Action desiredAction = Action.NONE;
+            if (closestTankDist.Height == 0)
+            {
+                //Vertically aligned with enemy base, so check if we are facing the right direction
+                if (closestTankDist.Width < 0 && closestTank.direction != Direction.RIGHT)
+                {
+                    desiredAction = Action.RIGHT;
+                }
+                else if (closestTankDist.Width > 0 && closestTank.direction != Direction.LEFT)
+                {
+                    desiredAction = Action.LEFT;
+                }
+                else
+                {
+                    // We are aligned and facing the right direction, so start shooting
+                    desiredAction = Action.FIRE;
+                }
+            }
+            else if (closestTankDist.Width == 0)
+            {
+                //Horizontally aligned with enemy base, so check if we are facing the right direction
+                if (closestTankDist.Height < 0 && closestTank.direction != Direction.DOWN)
+                {
+                    desiredAction = Action.DOWN;
+                }
+                else if (closestTankDist.Height > 0 && closestTank.direction != Direction.UP)
+                {
+                    desiredAction = Action.UP;
+                }
+                else
+                {
+                    // We are aligned and facing the right direction, so start shooting
+                    desiredAction = Action.FIRE;
+                }
+            }
+            else
+            {
+                // We still need to get in position... let's see if we can
+                if (Math.Abs(closestTankDist.Width) <= Math.Abs(closestTankDist.Height))
+                {
+                    if (closestTankDist.Width < 0)
+                    {
+                        desiredAction = Action.RIGHT;
+                    }
+                    else
+                    {
+                        desiredAction = Action.LEFT;
+                    }
+                }
+                else
+                {
+                    if (closestTankDist.Height < 0)
+                    {
+                        desiredAction = Action.DOWN;
+                    }
+                    else
+                    {
+                        desiredAction = Action.UP;
+                    }
+                }
+            }
+
+            foreach (Action[] actionSet in validActions)
+            {
+                if (actionSet[closestTankIdx] == desiredAction)
+                {
+                    for (int idx = 0; idx < myState.Me.units.Count; idx++)
+                    {
+                        debugWin.AddLog("Unit " + idx + " : Action=" + actionSet[idx]);
+                        Program.MainForm.SetAction(myState.myPlayerIdx, myState.Me.units[idx].id, actionSet[idx]);
+                    }
+                    return;
+                }
+            }
+
+            switch(desiredAction)
+            {
+                case Action.RIGHT:
+                    if ((closestTank.direction == Direction.RIGHT) && (myState.blocks[closestTank.x + 3, closestTank.y] == State.FULL)) desiredAction = Action.FIRE;
+                    break;
+                case Action.LEFT:
+                    if ((closestTank.direction == Direction.LEFT) && (myState.blocks[closestTank.x - 3, closestTank.y] == State.FULL)) desiredAction = Action.FIRE;
+                    break;
+                case Action.UP:
+                    if ((closestTank.direction == Direction.UP) && (myState.blocks[closestTank.x, closestTank.y - 3] == State.FULL)) desiredAction = Action.FIRE;
+                    break;
+                case Action.DOWN:
+                    if ((closestTank.direction == Direction.DOWN) && (myState.blocks[closestTank.x, closestTank.y + 3] == State.FULL)) desiredAction = Action.FIRE;
+                    break;
+            }
+            foreach (Action[] actionSet in validActions)
+            {
+                if (actionSet[closestTankIdx] == desiredAction)
+                {
+                    for (int idx = 0; idx < myState.Me.units.Count; idx++)
+                    {
+                        debugWin.AddLog("Unit " + idx + " : Action=" + actionSet[idx]);
+                        Program.MainForm.SetAction(myState.myPlayerIdx, myState.Me.units[idx].id, actionSet[idx]);
+                    }
+                    return;
+                }
+            }
+
+            int pickActions = rnd.Next(validActions.Count);
+            Action[] picked = validActions[pickActions];
+            for (int idx = 0; idx < myState.Me.units.Count; idx++)
             {
                 debugWin.AddLog("Unit " + idx + " : Action=" + picked[idx]);
                 Program.MainForm.SetAction(myState.myPlayerIdx, myState.players[myState.myPlayerIdx].units[idx].id, picked[idx]);
