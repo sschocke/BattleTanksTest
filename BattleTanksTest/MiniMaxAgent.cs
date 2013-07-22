@@ -2,10 +2,11 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Diagnostics;
 
 namespace BattleTanksTest
 {
-    public class MiniMaxAgent
+    public class MiniMaxAgent : IAgent
     {
         private AIDebugWindow debugWindow;
         private long nodesSearched;
@@ -14,9 +15,9 @@ namespace BattleTanksTest
         private struct Result
         {
             public double Score;
-            public Action[] Actions;
+            public ActionSet Actions;
 
-            public Result(double score, Action[] actions)
+            public Result(double score, ActionSet actions)
             {
                 this.Score = score;
                 this.Actions = actions;
@@ -26,14 +27,18 @@ namespace BattleTanksTest
         public MiniMaxAgent(AIDebugWindow debug)
         {
             this.debugWindow = debug;
-            this.searchDepth = 1;
+            this.searchDepth = 2;
         }
 
-        public Action[] GetAction(ClientGameState myState)
+        public ActionSet GetAction(ClientGameState myState)
         {
-            this.nodesSearched = 0;
-            Result best = this.getNode(-1, 0, myState);
+            Stopwatch searchDuration = new Stopwatch();
 
+            this.nodesSearched = 0;
+            searchDuration.Start();
+            Result best = this.getNode(-1, 0, myState);
+            searchDuration.Stop();
+            this.debugWindow.AddLog("Depth " + this.searchDepth + " searched " + this.nodesSearched + " nodes in " + searchDuration.ElapsedMilliseconds + "ms");
             return best.Actions;
         }
 
@@ -45,6 +50,10 @@ namespace BattleTanksTest
             this.nodesSearched++;
             if (agentIdx == 0) {
                 curDepth++;
+                if (nodesSearched % 1000 == 0)
+                {
+                    this.debugWindow.AddLog("Searched " + this.nodesSearched + " nodes...");
+                }
             } else {
                 me = curState.Opponent;
                 opponent = curState.Me;
@@ -54,7 +63,7 @@ namespace BattleTanksTest
             if ((curDepth == this.searchDepth) || (curState.Won == true) || (curState.Lost == true))
             {
                 double score = curState.Evaluate();
-                Action[] actions = new Action[me.units.Count];
+                ActionSet actions = new ActionSet(me.units.Count);
                 for (int idx = 0; idx < me.units.Count; idx++)
                 {
                     actions[idx] = Action.NONE;
@@ -79,24 +88,25 @@ namespace BattleTanksTest
         private Result getMin(int curDepth, int agentIdx, ClientGameState curState)
         {
             double min = Double.MaxValue;
-            Action[] bestActions = new Action[curState.Me.units.Count];
+            ActionSet bestActions = new ActionSet(curState.Me.units.Count);
             int opponentIdx = (curState.myPlayerIdx + 1) % 2;
-            List<Action[]> legalActions = curState.GetLegalActions(opponentIdx);
+            List<ActionSet> legalActions = curState.GetLegalActions(opponentIdx);
 
-            foreach (Action[] action in legalActions)
+            foreach (ActionSet action in legalActions)
             {
                 ClientGameState successor = new ClientGameState(curState);
                 for (int unitIdx = 0; unitIdx < successor.Opponent.units.Count; unitIdx++)
                 {
                     successor.Opponent.units[unitIdx].action = action[unitIdx];
                 }
+                successor.UpdateGameState();
                 int nextAgentIdx = (agentIdx + 1) % 2;
 
                 Result result = this.getNode(curDepth, nextAgentIdx, successor);
                 if (result.Score < min)
                 {
                     min = result.Score;
-                    result.Actions.CopyTo(bestActions, 0);
+                    action.CopyTo(bestActions);
                 }
             }
 
@@ -106,10 +116,10 @@ namespace BattleTanksTest
         private Result getMax(int curDepth, int agentIdx, ClientGameState curState)
         {
             double max = Double.MinValue;
-            Action[] bestActions = new Action[curState.Me.units.Count];
-            List<Action[]> legalActions = curState.GetLegalActions(curState.myPlayerIdx);
+            ActionSet bestActions = new ActionSet(curState.Me.units.Count);
+            List<ActionSet> legalActions = curState.GetLegalActions(curState.myPlayerIdx);
 
-            foreach (Action[] action in legalActions)
+            foreach (ActionSet action in legalActions)
             {
                 ClientGameState successor = new ClientGameState(curState);
                 for (int unitIdx = 0; unitIdx < successor.Me.units.Count; unitIdx++)
@@ -122,7 +132,7 @@ namespace BattleTanksTest
                 if (result.Score > max)
                 {
                     max = result.Score;
-                    result.Actions.CopyTo(bestActions, 0);
+                    action.CopyTo(bestActions);
                 }
             }
 

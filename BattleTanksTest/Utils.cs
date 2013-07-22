@@ -33,5 +33,11 @@ namespace BattleTanksTest
             return DistanceBetween(playerBase.x, playerBase.y, x, y);
         }
 
+        public static double ManhattanDistance(Size dist)
+        {
+            double mDist = Math.Sqrt((double)(dist.Width * dist.Width) + (double)(dist.Height * dist.Height));
+
+            return mDist;
+        }
     }
 }

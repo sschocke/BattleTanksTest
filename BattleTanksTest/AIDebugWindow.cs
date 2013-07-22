@@ -35,7 +35,9 @@ namespace BattleTanksTest
         private delegate void AddLogDelegate(string text);
 
         private AddLogDelegate addLogDel;
-        public void AddLog(string text)
+
+        [Conditional("DEBUG")]
+        public void addLogInternal(string text)
         {
             if (this.txtLog.InvokeRequired)
             {
@@ -46,6 +48,11 @@ namespace BattleTanksTest
                 this.txtLog.AppendText(text + Environment.NewLine);
                 Debug.WriteLine(myPlayerName + ":" + text);
             }
+        }
+
+        public void AddLog(string text)
+        {
+            this.addLogInternal(text);
         }
 
         private void canvas_Paint(object sender, PaintEventArgs e)

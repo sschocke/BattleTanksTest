@@ -28,12 +28,12 @@ namespace BattleTanksTest
             InitializeComponent();
             gridFont = new Font("Arial", 10);
 
-            string layout = File.ReadAllText("layout1.txt");
+            string layout = File.ReadAllText("layout2.txt");
             gameState = new ServerGameState(layout);
 #if DEBUG
             this.MinimumSize = new Size((gameState.BoardWidth * 16) + 10, (gameState.BoardHeight * 16) + 30);
             this.Size = new Size((gameState.BoardWidth * 32) + 10, (gameState.BoardHeight * 32) + 30);
-            this.gameTimer.Interval = 300;
+            this.gameTimer.Interval = 3000;
 #else
             this.MinimumSize = new Size((gameState.BoardWidth * 8) + 10, (gameState.BoardHeight * 8) + 30);
             this.Size = new Size((gameState.BoardWidth * 8) + 10, (gameState.BoardHeight * 8) + 30);
@@ -177,9 +177,9 @@ namespace BattleTanksTest
 
         private void canvas_DoubleClick(object sender, EventArgs e)
         {
-#if DEBUG
             p1Debug = new AIDebugWindow("Player 1", 0);
             p2Debug = new AIDebugWindow("Player 2", 1);
+#if DEBUG
             p1Debug.Show(this);
             p2Debug.Show(this);
             p1Debug.Height = this.Height / 2;
@@ -221,6 +221,7 @@ namespace BattleTanksTest
             {
                 player2Worker.CancelAsync();
             }
+            //Program.abDebug.Close();
         }
 
         // Game API
@@ -282,14 +283,17 @@ namespace BattleTanksTest
             Random rnd = new Random();
             State[,] layout = Program.MainForm.Login("Player 1");
             GameState initialState = Program.MainForm.GetStatus(0);
-            MiniMaxAgent agent = new MiniMaxAgent(p1Debug);
+            IAgent agent = new AlphaBetaAgent(p1Debug);
 
             ClientGameState myState = new ClientGameState(layout, initialState, 0);
+            myState.currentTick = -1;
+#if DEBUG
+            p1Debug.UpdateState(myState);
+            Application.DoEvents();
+#endif
+
             while (player1Worker.CancellationPending == false)
             {
-#if DEBUG
-                p1Debug.UpdateState(myState);
-#endif
                 GameState curState = Program.MainForm.GetStatus(0);
                 if (curState.events.blockEvents.Count > 0)
                 {
@@ -300,7 +304,11 @@ namespace BattleTanksTest
                 {
                     myState = new ClientGameState(myState.blocks, curState, 0);
                     myState.ProcessEvents(curState.events);
-                    Action[] actions = agent.GetAction(myState);
+#if DEBUG
+                    p1Debug.UpdateState(myState);
+                    Application.DoEvents();
+#endif
+                    ActionSet actions = agent.GetAction(myState);
                     for (int idx = 0; idx < myState.Me.units.Count; idx++)
                     {
                         p1Debug.AddLog("Unit " + idx + " : Action=" + actions[idx]);
@@ -316,14 +324,17 @@ namespace BattleTanksTest
             Random rnd = new Random();
             State[,] layout = Program.MainForm.Login("Player 2");
             GameState initialState = Program.MainForm.GetStatus(1);
+            IAgent agent = new AlphaBetaAgent(p2Debug);
 
             ClientGameState myState = new ClientGameState(layout, initialState, 1);
+            myState.currentTick = -1;
+#if DEBUG
+            p2Debug.UpdateState(myState);
+            Application.DoEvents();
+#endif
 
             while (player2Worker.CancellationPending == false)
             {
-#if DEBUG
-                p2Debug.UpdateState(myState);
-#endif
                 GameState curState = Program.MainForm.GetStatus(1);
                 if (curState.events.blockEvents.Count > 0)
                 {
@@ -334,7 +345,11 @@ namespace BattleTanksTest
                 {
                     myState = new ClientGameState(myState.blocks, curState, 1);
                     myState.ProcessEvents(curState.events);
-                    GoalAgent(rnd, myState, p2Debug);
+#if DEBUG
+                    p2Debug.UpdateState(myState);
+                    Application.DoEvents();
+#endif
+                    RandomAgent(rnd, myState, p2Debug);
                 }
 
                 Thread.Sleep(100);
@@ -343,14 +358,14 @@ namespace BattleTanksTest
 
         private static void RandomAgent(Random rnd, ClientGameState myState, AIDebugWindow debugWin)
         {
-            List<Action[]> legalActions = myState.GetLegalActions(myState.myPlayerIdx);
+            List<ActionSet> legalActions = myState.GetLegalActions(myState.myPlayerIdx);
             if (legalActions.Count < 1)
             {
                 return;
             }
 
             int pickActions = rnd.Next(legalActions.Count);
-            Action[] picked = legalActions[pickActions];
+            ActionSet picked = legalActions[pickActions];
             for (int idx = 0; idx < myState.players[myState.myPlayerIdx].units.Count; idx++)
             {
                 debugWin.AddLog("Unit " + idx + " : Action=" + picked[idx]);
@@ -363,7 +378,7 @@ namespace BattleTanksTest
             int closestTankIdx = -1;
             Size closestTankDist = new Size(myState.BoardWidth,myState.BoardHeight);
 
-            List<Action[]> legalActions = myState.GetLegalActions(myState.myPlayerIdx);
+            List<ActionSet> legalActions = myState.GetLegalActions(myState.myPlayerIdx);
             if (legalActions.Count < 1)
             {
                 return;
@@ -446,7 +461,7 @@ namespace BattleTanksTest
                 }
             }
 
-            foreach (Action[] actionSet in legalActions)
+            foreach (ActionSet actionSet in legalActions)
             {
                 if (actionSet[closestTankIdx] == desiredAction)
                 {
@@ -460,7 +475,7 @@ namespace BattleTanksTest
             }
 
             int pickActions = rnd.Next(legalActions.Count);
-            Action[] picked = legalActions[pickActions];
+            ActionSet picked = legalActions[pickActions];
             for (int idx = 0; idx < myState.players[myState.myPlayerIdx].units.Count; idx++)
             {
                 debugWin.AddLog("Unit " + idx + " : Action=" + picked[idx]);
@@ -471,14 +486,14 @@ namespace BattleTanksTest
         private static void GoalAgent(Random rnd, ClientGameState myState, AIDebugWindow debugWin)
         {
             int avoidedLosing = 0;
-            List<Action[]> legalActions = myState.GetLegalActions(myState.myPlayerIdx);
+            List<ActionSet> legalActions = myState.GetLegalActions(myState.myPlayerIdx);
             if (legalActions.Count < 1)
             {
                 return;
             }
 
-            List<Action[]> validActions = new List<Action[]>();
-            foreach(Action[] action in legalActions)
+            List<ActionSet> validActions = new List<ActionSet>();
+            foreach(ActionSet action in legalActions)
             {
                 ClientGameState afterState = new ClientGameState(myState);
                 for (int unitIdx = 0; unitIdx < afterState.Me.units.Count; unitIdx++)
@@ -586,7 +601,7 @@ namespace BattleTanksTest
                 }
             }
 
-            foreach (Action[] actionSet in validActions)
+            foreach (ActionSet actionSet in validActions)
             {
                 if (actionSet[closestTankIdx] == desiredAction)
                 {
@@ -614,7 +629,7 @@ namespace BattleTanksTest
                     if ((closestTank.direction == Direction.DOWN) && (myState.blocks[closestTank.x, closestTank.y + 3] == State.FULL)) desiredAction = Action.FIRE;
                     break;
             }
-            foreach (Action[] actionSet in validActions)
+            foreach (ActionSet actionSet in validActions)
             {
                 if (actionSet[closestTankIdx] == desiredAction)
                 {
@@ -628,7 +643,7 @@ namespace BattleTanksTest
             }
 
             int pickActions = rnd.Next(validActions.Count);
-            Action[] picked = validActions[pickActions];
+            ActionSet picked = validActions[pickActions];
             for (int idx = 0; idx < myState.Me.units.Count; idx++)
             {
                 debugWin.AddLog("Unit " + idx + " : Action=" + picked[idx]);
